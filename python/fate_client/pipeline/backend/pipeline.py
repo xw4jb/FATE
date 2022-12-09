@@ -658,6 +658,7 @@ class PipeLine(object):
 
     @LOGGER.catch(reraise=True)
     def upload(self, drop=0):
+        LOGGER.warning(f"Pipeline always uploads data to local FATE storage.")
         for data_conf in self._upload_conf:
             upload_conf = self._construct_upload_conf(data_conf)
             LOGGER.debug(f"upload_conf is {json.dumps(upload_conf)}")
@@ -801,6 +802,8 @@ class PipeLine(object):
 
     @LOGGER.catch(reraise=True)
     def bind_table(self, name, namespace, path, engine='PATH', replace=True, **kwargs):
+        LOGGER.warning(f"Pipeline `bind_table` always binds table to local flow service. "
+                       f"For binding to remote locations, please operate on remote sites.")
         info = self._job_invoker.bind_table(engine=engine, name=name, namespace=namespace, address={
             "path": path
         }, drop=replace, **kwargs)
