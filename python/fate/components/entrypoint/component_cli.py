@@ -23,7 +23,7 @@ def component():
 
 
 @component.command()
-@click.option("--process-tag", required=True, help="unique id to identify this execution process")
+@click.option("--process-tag", required=False, help="unique id to identify this execution process")
 @click.option("--config", required=False, type=click.File(), help="config path")
 @click.option("--config-entrypoint", required=False, help="enctypoint to get config")
 @click.option("--properties", "-p", multiple=True, help="properties config")
