@@ -78,7 +78,7 @@ class ExecutionStatus:
         import requests
         logging.info(self._mlmd.metadata.statu_uri)
         data = self.StateData(execution_id=self._taskid).dict()
-        logging.debug(f"wzh test request flow uri: {self._mlmd.metadata.statu_uri}")
+        logging.debug(f"request flow uri: {self._mlmd.metadata.statu_uri}")
         response = requests.get(self._mlmd.metadata.statu_uri, params=data)
         logging.debug(f"response: {response.text}")
         status = False
