@@ -14,6 +14,11 @@
 #  limitations under the License.
 from sklearn import metrics
 
+class Evaluator(object):
+
+    def __init__(self) -> None:
+        pass
+
 
 class BinaryEvaluator(object):
     def __init__(self):
