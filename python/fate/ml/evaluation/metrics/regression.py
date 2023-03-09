@@ -9,9 +9,12 @@ import numpy as np
 
 
 class RMSE(Metric):
+    name = 'RootMeanSquaredError'
+    metric_type = MetricType.REGRESSION
+    alias = 'rmse'
 
     def __init__(self):
-        super().__init__('RootMeanSquaredError', MetricType.REGRESSION, 'rmse')
+        super().__init__()
 
     def fit(self, labels, pred_scores):
         self._result = np.sqrt(mean_squared_error(labels, pred_scores))
@@ -19,9 +22,12 @@ class RMSE(Metric):
 
 
 class MAE(Metric):
+    name = 'MeanAbsoluteError'
+    metric_type = MetricType.REGRESSION
+    alias = 'mae'
 
     def __init__(self):
-        super().__init__('MeanAbsoluteError', MetricType.REGRESSION, 'mae')
+        super().__init__()
 
     def fit(self, labels, pred_scores):
         self._result = mean_absolute_error(labels, pred_scores)
@@ -29,9 +35,12 @@ class MAE(Metric):
 
 
 class R2Score(Metric):
+    name = 'R2Score'
+    metric_type = MetricType.REGRESSION
+    alias = 'r2'
 
     def __init__(self):
-        super().__init__('R2Score', MetricType.REGRESSION, 'r2')
+        super().__init__()
 
     def fit(self, labels, pred_scores):
         self._result = r2_score(labels, pred_scores)
@@ -39,9 +48,12 @@ class R2Score(Metric):
 
 
 class MSE(Metric):
+    name = 'MeanSquaredError'
+    metric_type = MetricType.REGRESSION
+    alias = 'mse'
 
     def __init__(self):
-        super().__init__('MeanSquaredError', MetricType.REGRESSION, 'mse')
+        super().__init__()
 
     def fit(self, labels, pred_scores):
         self._result = mean_squared_error(labels, pred_scores)
@@ -49,9 +61,12 @@ class MSE(Metric):
 
 
 class ExplainedVariance(Metric):
+    name = 'ExplainedVariance'
+    metric_type = MetricType.REGRESSION
+    alias = 'ev'
 
     def __init__(self):
-        super().__init__('ExplainedVariance', MetricType.REGRESSION, 'ev')
+        super().__init__()
 
     def fit(self, labels, pred_scores):
         self._result = explained_variance_score(labels, pred_scores)
@@ -59,44 +74,13 @@ class ExplainedVariance(Metric):
 
 
 class MedianAbsoluteError(Metric):
+    name = 'MedianAbsoluteError'
+    metric_type = MetricType.REGRESSION
+    alias = 'medae'
 
     def __init__(self):
-        super().__init__('MedianAbsoluteError', MetricType.REGRESSION, 'medae')
+        super().__init__()
 
     def fit(self, labels, pred_scores):
         self._result = median_absolute_error(labels, pred_scores)
-        return self._result
-
-
-class IC(Metric):
-
-    def __init__(self):
-        super().__init__('InformationCriterion', 'model selection', 'ic')
-
-    def fit(self, k, n, dfe, loss):
-        aic_score = k * dfe + 2 * n * loss
-        self._result = aic_score
-        return self._result
-
-
-class IC_Approx(Metric):
-
-    def __init__(self):
-        super().__init__('InformationCriterionApprox', 'model selection', 'ic_approx')
-
-    def fit(self, k, n, dfe, loss):
-        aic_score = k * dfe + n * np.log(loss * 2)
-        self._result = aic_score
-        return self._result
-
-
-class Describe(Metric):
-
-    def __init__(self):
-        super().__init__('DescriptiveStatistics', 'descriptive', 'describe')
-
-    def fit(self, pred_scores):
-        describe = stats.describe(pred_scores)
-        self._result = {"min": describe.minmax[0], "max": describe.minmax[1], "mean": describe.mean,
-                        "variance": describe.variance, "skewness": describe.skewness, "kurtosis": describe.kurtosis}
         return self._result

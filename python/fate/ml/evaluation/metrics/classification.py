@@ -7,6 +7,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import average_precision_score
+from sklearn.metrics import roc_auc_score
 from fate.ml.evaluation.metrics.metric_base import Metric, MetricType
 
 
@@ -119,12 +120,30 @@ class ThresholdCutter(object):
         return quantile_val
 
 
+class AUC(Metric):
+
+    name = 'AUC'
+    metric_type = MetricType.BINARY
+    alias = 'auc'
+
+    def __init__(self):
+        super().__init__()
+
+    def fit(self, labels, pred_scores):
+        return roc_auc_score(labels, pred_scores)
+
+
+
 class KS(Metric):
 
-    def __init__(self) -> None:
-        super().__init__(name='KS', metric_type=MetricType.BINARY, alias='ks')
+    name = 'KS'
+    metric_type = MetricType.BINARY
+    alias = 'ks'
 
-    def fit(labels, pred_scores, pos_label=1, fixed_interval_threshold=True):
+    def __init__(self):
+        super().__init__()
+
+    def fit(self, labels, pred_scores, pos_label=1, fixed_interval_threshold=True):
         sorted_labels, sorted_scores = _sort_score_and_label(labels, pred_scores)
 
         threshold, cuts = ThresholdCutter.cut_by_index(sorted_scores)
@@ -150,12 +169,17 @@ class KS(Metric):
 
 class BiClassMetric(Metric):
 
-    def __init__(self, name, alias, cut_method='step', remove_duplicate=False, pos_label=1):
-        super().__init__(name, MetricType.BINARY, alias)
+    name = None
+    metric_type = MetricType.BINARY
+    alias = None
+
+    def __init__(self, cut_method='step', remove_duplicate=False, pos_label=1):
+        super().__init__()
         assert cut_method in ['step', 'quantile']
         self.cut_method = cut_method
         self.remove_duplicate = remove_duplicate  # available when cut_method is quantile
         self.pos_label = pos_label
+
 
     def prepare_confusion_mat(self, labels, scores, add_to_end=True, ):
         sorted_labels, sorted_scores = _sort_score_and_label(labels, scores)
@@ -179,8 +203,8 @@ class BiClassMetric(Metric):
 
     def compute_metric_from_confusion_mat(self, *args):
         raise NotImplementedError()
-    
-    def fit(self, labels, scores, ):
+
+    def fit(self, labels, scores):
         confusion_mat, score_threshold, cuts = self.prepare_confusion_mat(labels, scores, )
         metric_scores = self.compute_metric_from_confusion_mat(confusion_mat)
         return list(metric_scores), score_threshold, cuts
@@ -191,8 +215,11 @@ class Lift(BiClassMetric):
     Compute lift
     """
 
+    name = 'Lift'
+    alias = 'lift'
+
     def __init__(self, cut_method='step', remove_duplicate=False, pos_label=1):
-        super().__init__('Lift', 'lift', cut_method, remove_duplicate, pos_label)
+        super().__init__(cut_method, remove_duplicate, pos_label)
 
     @staticmethod
     def _lift_helper(val):
@@ -229,7 +256,7 @@ class Lift(BiClassMetric):
 
         return lift_x_type, lift_y_type
 
-    def fit(self, labels, pred_scores, pos_label=1):
+    def fit(self, labels, pred_scores):
 
         confusion_mat, score_threshold, cuts = self.prepare_confusion_mat(labels, pred_scores, add_to_end=False, )
 
@@ -252,12 +279,16 @@ class Lift(BiClassMetric):
 
 
 class Gain(BiClassMetric):
+
     """
     Compute Gain
     """
 
+    name = 'Gain'
+    alias = 'gain'
+
     def __init__(self, cut_method='step', remove_duplicate=False, pos_label=1):
-        super().__init__('Gain', 'gain', cut_method, remove_duplicate, pos_label)
+        super().__init__(cut_method, remove_duplicate, pos_label)
 
     @staticmethod
     def _gain_helper(val):
@@ -288,7 +319,7 @@ class Gain(BiClassMetric):
 
         return gain_x_type, gain_y_type
 
-    def compute(self, labels, pred_scores, pos_label=1):
+    def fit(self, labels, pred_scores):
 
         confusion_mat, score_threshold, cuts = self.prepare_confusion_mat(labels, pred_scores, add_to_end=False, )
 
@@ -314,6 +345,8 @@ class BiClassPrecision(BiClassMetric):
     """
     Compute binary classification precision
     """
+    name = 'BiClassPrecision'
+    alias = 'bi-precision'
 
     def compute_metric_from_confusion_mat(self, confusion_mat, formatted=True, impute_val=1.0):
         numerator = confusion_mat['tp']
@@ -330,12 +363,18 @@ class BiClassPrecision(BiClassMetric):
             return precision_scores
 
 
-class MultiClassPrecision(object):
+class MultiClassPrecision(Metric):
     """
     Compute multi-classification precision
     """
+    name='MultiClassPrecision'
+    metric_type=MetricType.MULTI
+    alias='precision'
 
-    def compute(self, labels, pred_scores):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def fit(self, labels, pred_scores):
         all_labels = sorted(set(labels).union(set(pred_scores)))
         return precision_score(labels, pred_scores, average=None), all_labels
 
@@ -344,6 +383,11 @@ class BiClassRecall(BiClassMetric):
     """
     Compute binary classification recall
     """
+    name = 'BiClassRecall'
+    alias = 'bi-recall'
+
+    def __init__(self, cut_method='step', remove_duplicate=False, pos_label=1):
+        super().__init__(cut_method, remove_duplicate, pos_label)
 
     def compute_metric_from_confusion_mat(self, confusion_mat, formatted=True):
         recall_scores = confusion_mat['tp'] / (confusion_mat['tp'] + confusion_mat['fn'])
@@ -356,11 +400,19 @@ class BiClassRecall(BiClassMetric):
 
 
 class MultiClassRecall(object):
+
     """
     Compute multi-classification recall
     """
 
-    def compute(self, labels, pred_scores):
+    name='MultiClassRecall'
+    metric_type=MetricType.MULTI
+    alias='recall'
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def fit(self, labels, pred_scores):
         all_labels = sorted(set(labels).union(set(pred_scores)))
         return recall_score(labels, pred_scores, average=None), all_labels
 
@@ -370,7 +422,13 @@ class BiClassAccuracy(BiClassMetric):
     Compute binary classification accuracy
     """
 
-    def compute(self, labels, scores, normalize=True):
+    name='BiClassAccuracy'
+    alias='bi-accuracy'
+
+    def __init__(self, cut_method='step', remove_duplicate=False, pos_label=1):
+        super().__init__(cut_method, remove_duplicate, pos_label)
+
+    def fit(self, labels, scores, normalize=True):
         confusion_mat, score_threshold, cuts = self.prepare_confusion_mat(labels, scores)
         metric_scores = self.compute_metric_from_confusion_mat(confusion_mat, normalize=normalize)
         return list(metric_scores), score_threshold[: len(metric_scores)], cuts[: len(metric_scores)]
@@ -382,22 +440,34 @@ class BiClassAccuracy(BiClassMetric):
         return rs[:-1]
 
 
-class MultiClassAccuracy(object):
+class MultiClassAccuracy(Metric):
     """
     Compute multi-classification accuracy
     """
 
-    def compute(self, labels, pred_scores, normalize=True):
+    name='MultiClassAccuracy'
+    metric_type=MetricType.MULTI
+    alias='acc'
+
+    def __init__(self) -> None:
+        super().__init__()
+    
+    def fit(self, labels, pred_scores, normalize=True):
         return accuracy_score(labels, pred_scores, normalize=normalize)
 
 
-class FScore(object):
+class FScore(Metric):
     """
     Compute F score from bi-class confusion mat
     """
+    name='Fscore'
+    metric_type=MetricType.BINARY
+    alias='fscore'
 
-    @staticmethod
-    def compute(labels, pred_scores, beta=1, pos_label=1):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def fit(self, labels, pred_scores, beta=1, pos_label=1):
         sorted_labels, sorted_scores = _sort_score_and_label(labels, pred_scores)
         _, cuts = ThresholdCutter.cut_by_step(sorted_scores, steps=0.01)
         fixed_interval_threshold = ThresholdCutter.fixed_interval_threshold()
@@ -419,9 +489,16 @@ class FScore(object):
         return f_score, fixed_interval_threshold, cuts
 
 
-class PSI(object):
+class PSI(Metric):
 
-    def compute(self, train_scores: list, validate_scores: list, train_labels=None, validate_labels=None,
+    name='PSI'
+    metric_type=MetricType.BINARY
+    alias='psi'
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def fit(self, train_scores: list, validate_scores: list, train_labels=None, validate_labels=None,
                 debug=False, str_intervals=False, round_num=3, pos_label=1):
         """
         train/validate scores: predicted scores on train/validate set
@@ -556,43 +633,3 @@ class PSI(object):
         psi_scores = np.array(psi_scores)
         total_psi = psi_scores.sum()
         return psi_scores, total_psi, expected_interval, actual_interval, expected_percentage, actual_percentage
-
-
-class KSTest(object):
-
-    @staticmethod
-    def compute(train_scores, validate_scores):
-        """
-        train/validate scores: predicted scores on train/validate set
-        """
-        return stats.ks_2samp(train_scores, validate_scores).pvalue
-
-
-class AveragePrecisionScore(object):
-
-    @staticmethod
-    def compute(train_scores, validate_scores, train_labels, validate_labels):
-        """
-            train/validate scores: predicted scores on train/validate set
-            train/validate labels: true labels
-        """
-        train_mAP = average_precision_score(train_labels, train_scores)
-        validate_mAP = average_precision_score(validate_labels, validate_scores)
-        return abs(train_mAP - validate_mAP)
-
-
-class Distribution(object):
-
-    @staticmethod
-    def compute(train_scores: list, validate_scores: list):
-        """
-        train/validate scores: predicted scores on train/validate set
-        """
-        train_scores = np.array(train_scores)
-        validate_scores = np.array(validate_scores)
-        validate_scores = dict(validate_scores)
-        count = 0
-        for key, value in train_scores:
-            if key in validate_scores.keys() and value != validate_scores.get(key):
-                count += 1
-        return count / len(train_scores)

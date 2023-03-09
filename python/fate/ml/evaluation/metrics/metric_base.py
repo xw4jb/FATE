@@ -8,10 +8,11 @@ class MetricType(Enum):
 
 class Metric(object):
 
-    def __init__(self, name, metric_type, alias) -> None:
-        self._name = name
-        self._metric_type = metric_type
-        self._alias = alias
+    name = None
+    metric_type = None
+    alias = None
+
+    def __init__(self) -> None:
         self._result = None
 
     def fit(self, *args, **kwargs):
