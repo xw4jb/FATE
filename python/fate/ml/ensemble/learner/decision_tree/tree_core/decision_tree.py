@@ -161,9 +161,6 @@ class DecisionTree(object):
         sample_pos['dir'] = True  # direction to next layer, use True to initalize all
         return sample_pos
 
-    def _get_split_node_map(self, cur_layer_node):
-        return {n.nid: idx for n, idx in enumerate(cur_layer_node)}
-
     def _get_leaf_node_map(self):
         if len(self._nodes) >= len(self._leaf_node_map):
             for n in self._nodes:

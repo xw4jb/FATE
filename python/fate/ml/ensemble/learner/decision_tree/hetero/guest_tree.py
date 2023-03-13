@@ -15,7 +15,7 @@
 import logging
 from fate.interface import Dataframe
 from fate.interface import Context
-from fate.ml.ensemble.learner.decision_tree.tree_core.splitter import XgboostSplitter
+from fate.ml.ensemble.learner.decision_tree.tree_core.splitter import HeteroSBTGuestSplitter
 from fate.ml.ensemble.learner.decision_tree.tree_core.hist_builder import HistogramBuilder, Histogram
 from fate.ml.ensemble.learner.decision_tree.tree_core.decision_tree import Node, DecisionTree
 
@@ -60,7 +60,8 @@ class HeteroDecisionTreeGuest(DecisionTree):
         
         # histogram builder
         self.hist_builder = HistogramBuilder()
-        self.splitter = XgboostSplitter(l1, l2, min_impurity_split, min_sample_split, min_leaf_node, min_child_weight)
+        self.splitter = HeteroSBTGuestSplitter(l1, l2, min_impurity_split, min_sample_split, min_leaf_node, min_child_weight, 
+                                               use_missing=self.use_missing)
 
     def _encrypt_grad_and_hess(self, g_tensor, h_tensor, encryptor):
         en_g = encryptor.encrypt(g_tensor)
@@ -90,20 +91,21 @@ class HeteroDecisionTreeGuest(DecisionTree):
         ctx.hosts.put('grad_and_hess', [en_g, en_h])
 
         # initialize positions
-        self._sample_pos = self._init_sample_positions(train_data)
+        self._sample_pos = self._init_sample_pos(train_data)
 
         # build tree
         for depth, layer_ctx in ctx.range(self.max_depth):
-
+            
             logger.info('start to fit hetero decision tree guest, depth: {}'.format(depth))
             layer_ctx.hosts.put('node_to_split', self._mask_node_list(self._cur_layer_node))
-            
             # compute histogram
             hist: Histogram = self.hist_builder.compute_histogram(train_data, gh=grad_and_hess, pos_df=self._sample_pos, 
                                                                   cur_layer_node=self._cur_layer_node, valid_features=self._valid_feature, 
                                                                   use_missing=self.use_missing, zero_as_missing=self.zero_as_missing)
+            # get encrypted split points from host
+            host_enc_split_points = layer_ctx.hosts.get('enc_split_points')
             
-            host_split_points = layer_ctx.hosts.get('split_points')
-            splits = self.splitter.split(histogram=hist, cur_layer_node=self._cur_layer_node, 
-                                         use_missing=self.use_missing, zero_as_missing=self.zero_as_missing)
+            splits, host_splits = self.splitter.federated_split(guest_histogram=hist, host_splits=host_enc_split_points, 
+                                                                cur_layer_node=self._cur_layer_node, encryptor=encryptor)
             
+            # update node pos
