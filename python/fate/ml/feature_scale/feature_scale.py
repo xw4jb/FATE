@@ -24,11 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 class FeatureScale(Module):
-    def __init__(self, method="standard"):
+    def __init__(self, method="standard", scale_col=None, feature_range=None):
         self.method = method
         self._scaler = None
         if self.method == "standard":
-            self._scaler = StandardScaler()
+            self._scaler = StandardScaler(scale_col)
+        elif self.method == "min_max":
+            self._scaler = MinMaxScaler(scale_col, feature_range)
+        else:
+            raise ValueError(f"Unknown scale method {self.method} given. Please check.")
 
     def fit(self, ctx: Context, train_data, validate_data=None) -> None:
         self._scaler.fit(ctx, train_data)
@@ -51,16 +55,20 @@ class FeatureScale(Module):
 
 
 class StandardScaler(Module):
-    def __init__(self):
+    def __init__(self, select_col):
         self._mean = None
         self._std = None
+        self.select_col = select_col
 
     def fit(self, ctx: Context, train_data, validate_data=None) -> None:
-        self._mean = train_data.mean()
-        self._std = train_data.std()
+        train_data_select = train_data[self.select_col]
+        self._mean = train_data_select.mean()
+        self._std = train_data_select.std()
 
     def transform(self, ctx: Context, test_data):
-        return (test_data - self._mean) / self._std
+        test_data_select = test_data[self.select_col]
+        test_data[self.select_col] = (test_data_select - self._mean) / self._std
+        return test_data
 
     def to_model(self):
         return dict(
@@ -68,8 +76,55 @@ class StandardScaler(Module):
             mean_dtype=self._mean.dtype.name,
             std=self._std.to_json(),
             std_dtype=self._std.dtype.name,
+            select_col=self.select_col
         )
 
     def from_model(self, model):
         self._mean = pd.Series(json.loads(model["mean"]), dtype=model["mean_dtype"])
         self._std = pd.Series(json.loads(model["std"]), dtype=model["std_dtype"])
+
+class MinMaxScaler(Module):
+    def __init__(self, select_col, feature_range):
+        self.feature_range = feature_range
+        self.select_col = select_col
+        self._min = None
+        self._max = None
+        self._scale = None
+        self._scale_min = None
+        self.range_min = None
+        self.range_max = None
+
+    def fit(self, ctx: Context, train_data, validate_data=None) -> None:
+        min_list, max_list = [], []
+        for col in train_data.schema.columns:
+            if col in self.feature_range:
+                min_list.append(self.feature_range[0])
+                max_list.append(self.feature_range[1])
+        self.range_min = pd.Series(min_list)
+        self.range_max = pd.Series(max_list)
+        train_data_select = train_data[self.select_col]
+        self._max = train_data_select.max()
+        self._min = train_data_select.min()
+        scale = self._max - self._min
+        scale[scale < 1e-6] = 1.0
+        self._scale = (self.range_max - self.range_min) / scale
+        self._scale_min = self.range_min - self._min * self._scale
+
+    def transform(self, ctx: Context, test_data):
+        test_data_select = test_data[self.select_col]
+        data_scaled = test_data_select * self._scale + self._scale_min
+        test_data[self.select_col] = data_scaled
+        return test_data
+
+    def to_model(self):
+        return dict(
+            scale=self._scale.to_json(),
+            scale_dtype=self._scale.dtype.name,
+            scale_min=self._scale_min.to_json,
+            scale_min_dtype=self._scale_min.dtype.name,
+            select_col=self.select_col
+        )
+
+    def from_model(self, model):
+        self._scale = pd.Series(json.loads(model["scale"]), dtype=model["scale_dtype"])
+        self._scale_min = pd.Series(json.loads(model["scale_min"]), dtype=model["scale_min_dtype"])

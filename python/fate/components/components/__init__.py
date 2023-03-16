@@ -15,7 +15,12 @@
 from .evaluation import evaluation
 from .feature_scale import feature_scale
 from .hetero_lr import hetero_lr
+from .hetero_linr import hetero_linr
 from .intersection import intersection
 from .reader import reader
+from .hetero_feature_binning import hetero_feature_binning
 
-BUILDIN_COMPONENTS = [hetero_lr, reader, feature_scale, intersection, evaluation]
+BUILDIN_COMPONENTS = [reader, intersection,
+                      feature_scale, hetero_feature_binning,
+                      hetero_lr, hetero_linr,
+                      evaluation]
