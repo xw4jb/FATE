@@ -21,3 +21,4 @@ from ._learning_rate import LRSchedulerParam
 from ._optimizer import OptimizerParam
 from ._penalty import penalty_param
 from ._init_param import InitParam
+from ._metrics import metrics_param, statistic_metrics_param

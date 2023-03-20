@@ -39,7 +39,7 @@ def feature_scale(ctx, role):
 @cpn.parameter("feature_range", type=Union[tuple, dict], default=(0, 1), optional=True,
                desc="Result feature value range for `min_max` method, "
                     "take either dict in format: {col_name: (min, max)} for specific columns "
-                    "or (min, max) for all columns. Columns unspecified will take default feature range (0, 1)")
+                    "or (min, max) for all columns. Columns unspecified will be scaled to default range (0,1)")
 @cpn.parameter("scale_col", type=List[str], default=None,
                desc="list of column names to be scaled, if None, all columns will be scaled; "
                     "only one of {scale_col, scale_idx} should be specified")
@@ -51,16 +51,16 @@ def feature_scale(ctx, role):
 @cpn.artifact("train_output_data", type=Output[DatasetArtifact], roles=[GUEST, HOST])
 @cpn.artifact("output_model", type=Output[ModelArtifact], roles=[GUEST, HOST])
 def feature_scale_train(
-    ctx,
-    role: Role,
-    train_data,
-    method,
-    feature_range,
-    scale_col,
-    scale_idx,
-    use_anonymous,
-    train_output_data,
-    output_model,
+        ctx,
+        role: Role,
+        train_data,
+        method,
+        feature_range,
+        scale_col,
+        scale_idx,
+        use_anonymous,
+        train_output_data,
+        output_model,
 ):
     train(ctx, train_data, train_output_data, output_model, method, feature_range, scale_col, scale_idx, use_anonymous)
 
@@ -70,33 +70,34 @@ def feature_scale_train(
 @cpn.artifact("test_data", type=Input[DatasetArtifact], optional=False, roles=[GUEST, HOST])
 @cpn.artifact("test_output_data", type=Output[DatasetArtifact], roles=[GUEST, HOST])
 def feature_scale_predict(
-    ctx,
-    role: Role,
-    test_data,
-    input_model,
-    test_output_data,
+        ctx,
+        role: Role,
+        test_data,
+        input_model,
+        test_output_data,
 ):
     predict(ctx, input_model, test_data, test_output_data)
 
 
 def train(ctx, train_data, train_output_data, output_model, method, feature_range, scale_col, scale_idx, use_anonymous):
-    from fate.ml.feature_scale import FeatureScale
-    columns = train_data.schema.columns
-    anonymous_columns = None
-    if use_anonymous:
-        anonymous_columns = train_data.schema.anonymous_columns
-        if method != "min_max":
-            feature_range = None
-    scale_col, feature_range = get_to_scale_cols(columns, anonymous_columns, scale_col, scale_idx, feature_range)
+    from fate.ml.preprocessing import FeatureScale
 
-    scaler = FeatureScale(method, scale_col, feature_range)
     with ctx.sub_ctx("train") as sub_ctx:
+        columns = train_data.schema.columns
+        anonymous_columns = None
+        if use_anonymous:
+            anonymous_columns = train_data.schema.anonymous_columns
+            if method != "min_max":
+                feature_range = None
+        scale_col, feature_range = get_to_scale_cols(columns, anonymous_columns, scale_col, scale_idx, feature_range)
+
+        scaler = FeatureScale(method, scale_col, feature_range)
         train_data = sub_ctx.reader(train_data).read_dataframe().data
         scaler.fit(sub_ctx, train_data)
 
         model = scaler.to_model()
         with output_model as model_writer:
-            model_writer.write_model("feature_scale", model, metadata={})
+            model_writer.write_model("preprocessing", model, metadata={})
 
     with ctx.sub_ctx("predict") as sub_ctx:
         output_data = scaler.transform(sub_ctx, train_data)
@@ -104,7 +105,7 @@ def train(ctx, train_data, train_output_data, output_model, method, feature_rang
 
 
 def predict(ctx, input_model, test_data, test_output_data):
-    from fate.ml.feature_scale import FeatureScale
+    from fate.ml.preprocessing import FeatureScale
 
     with ctx.sub_ctx("predict") as sub_ctx:
         with input_model as model_reader:

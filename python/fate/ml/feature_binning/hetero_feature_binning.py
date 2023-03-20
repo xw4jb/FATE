@@ -186,16 +186,21 @@ class StandardBinning(Module):
                                               column=self.bin_col,
                                               error_rate=self.error_rate,
                                               skip_none=True)
-            split_pt_dict = {}
+            """split_pt_dict = {}
             for col in split_pt_df.schema.columns:
                 split_pt_dict[col] = list(split_pt_df[col])
-            self._split_pt_dict = split_pt_dict
+            self._split_pt_dict = split_pt_dict"""
+            # pd.DataFrame
+            # @todo: maybe convert to format {col_name: List[split_pt0, split_pt1]}
+            self._split_pt_dict = split_pt_df.to_dict()
         elif self.method == "bucket":
             split_pt_df = train_data.bucket_split(q=self.n_bins, column=self.bin_col, skip_none=True)
-            split_pt_dict = {}
+
+            """split_pt_dict = {}
             for col in split_pt_df.schema.columns:
                 split_pt_dict[col] = split_pt_df[col]
-            self._split_pt_dict = split_pt_dict
+            self._split_pt_dict = split_pt_dict"""
+            self._split_pt_dict = split_pt_df.to_dict()
         elif self.method == "manual":
             self._split_pt_dict = self._manual_split_pt_dict
         for col_name in self.bin_col:
@@ -207,16 +212,27 @@ class StandardBinning(Module):
         binned_df = train_data.bucketize(n_bins=self._split_pt_dict, col=self.bin_col, bucket_none=True)
         return binned_df
 
+    """@staticmethod
+    def is_monotonic(woe_array):
+        # Check the woe is monotonic or not
+        
+        if len(woe_array) <= 1:
+            return torch.tensor([True])
+
+        is_increasing = torch.all(woe_array[1:] > woe_array[:-1])
+        is_decreasing = torch.all(woe_array[1:] < woe_array[:-1])
+        return is_increasing or is_decreasing"""
+
     @staticmethod
     def is_monotonic(woe_array):
         """
         Check the woe is monotonic or not
         """
         if len(woe_array) <= 1:
-            return torch.tensor([True])
+            return True
 
-        is_increasing = torch.all(woe_array[1:] > woe_array[:-1])
-        is_decreasing = torch.all(woe_array[1:] < woe_array[:-1])
+        is_increasing = all(woe_array[1:] > woe_array[:-1])
+        is_decreasing = all(woe_array[1:] < woe_array[:-1])
         return is_increasing or is_decreasing
 
     def compute_metrics_from_count(self, event_count_array, non_event_count_array,
@@ -228,7 +244,7 @@ class StandardBinning(Module):
         bin_iv = (event_rate - non_event_rate) * bin_woe
         return event_rate, non_event_rate, bin_woe, bin_iv
 
-    def compute_all_col_metrics(self, col_list, event_count_hist, non_event_count_hist):
+    """def compute_all_col_metrics(self, col_list, event_count_hist, non_event_count_hist):
         total_event_count, total_non_event_count = None, None
         metrics_summary = {}
         woe_dict = {}
@@ -254,6 +270,32 @@ class StandardBinning(Module):
             col_summary["col_iv"] = bin_iv.sum().tolist()
             metrics_summary[col] = col_summary
             woe_dict[col] = bin_woe.tolist()
+        return metrics_summary, woe_dict"""
+
+    def compute_all_col_metrics(self, event_count_hist, non_event_count_hist):
+        # pd.DataFrame ver
+        total_event_count, total_non_event_count = event_count_hist.sum(), non_event_count_hist.sum()
+        total_non_event_count[total_event_count < 1] = 1
+        total_non_event_count[total_non_event_count < 1] = 1
+        event_rate = (event_count_hist == 0) * self.adjustment_factor + event_count_hist/ total_event_count
+        non_event_rate = (non_event_count_hist == 0) * self.adjustment_factor + non_event_count_hist \
+                         / total_non_event_count
+        rate_ratio = event_rate / non_event_rate
+        bin_woe = rate_ratio.apply(lambda v: np.log(v))
+        bin_iv = (event_rate - non_event_rate) * bin_woe
+
+        metrics_summary = {}
+
+        metrics_summary["event_count"] = event_count_hist.to_dict()
+        metrics_summary["non_event_count"] = non_event_count_hist.to_dict()
+        metrics_summary["event_rate"] = event_rate.to_dict()
+        metrics_summary["non_event_rate"] = non_event_rate.to_dictt()
+        metrics_summary["woe_array"] = bin_woe.to_dict()
+        metrics_summary["iv_array"] = bin_iv.to_dict()
+        metrics_summary["is_monotonic"] = bin_woe.apply(StandardBinning.is_monotonic, axis=0).to_dict()
+        metrics_summary["col_iv"] = bin_iv.sum().to_dict()
+        #@todo: maybe convert to {col_name: List[woe_0, woe_1]}
+        woe_dict = bin_woe.to_dict()
         return metrics_summary, woe_dict
 
     def compute_metrics(self, binned_data, label_col):

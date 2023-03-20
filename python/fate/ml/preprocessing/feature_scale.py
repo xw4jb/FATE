@@ -82,35 +82,50 @@ class StandardScaler(Module):
     def from_model(self, model):
         self._mean = pd.Series(json.loads(model["mean"]), dtype=model["mean_dtype"])
         self._std = pd.Series(json.loads(model["std"]), dtype=model["std_dtype"])
+        self.select_col = model["select_col"]
+
 
 class MinMaxScaler(Module):
+    """
+       Transform given data by scaling features to given range.
+       Adapted from sklearn.preprocessing.minmax_scale
+
+       The transformation is given by::
+           X_std = (X - X.min()) / (X.max() - X.min())
+           X_scaled = X_std * (range_max - range_min) + range_min
+    """
     def __init__(self, select_col, feature_range):
         self.feature_range = feature_range
         self.select_col = select_col
-        self._min = None
-        self._max = None
         self._scale = None
         self._scale_min = None
-        self.range_min = None
-        self.range_max = None
 
     def fit(self, ctx: Context, train_data, validate_data=None) -> None:
+        train_data_select = train_data[self.select_col]
+        data_max = train_data_select.max()
+        data_min = train_data_select.min()
         min_list, max_list = [], []
+        # min/max values in the same order as schema.header
         for col in train_data.schema.columns:
             if col in self.feature_range:
                 min_list.append(self.feature_range[0])
                 max_list.append(self.feature_range[1])
-        self.range_min = pd.Series(min_list)
-        self.range_max = pd.Series(max_list)
-        train_data_select = train_data[self.select_col]
-        self._max = train_data_select.max()
-        self._min = train_data_select.min()
-        scale = self._max - self._min
-        scale[scale < 1e-6] = 1.0
-        self._scale = (self.range_max - self.range_min) / scale
-        self._scale_min = self.range_min - self._min * self._scale
+        range_min = pd.Series(min_list)
+        range_max = pd.Series(max_list)
+
+        data_range = data_max - data_min
+        # for safe division
+        data_range[data_range < 1e-6] = 1.0
+        self._scale = (range_max - range_min) / data_range
+        self._scale_min = range_min - data_min * self._scale
 
     def transform(self, ctx: Context, test_data):
+        """
+        Transformation is given by:
+            X_scaled = scale * X + range_min - X_train.min() * scale
+        where scale = (range_max - range_min) / (X_train.max() - X_train.min()
+
+        """
         test_data_select = test_data[self.select_col]
         data_scaled = test_data_select * self._scale + self._scale_min
         test_data[self.select_col] = data_scaled
@@ -120,7 +135,7 @@ class MinMaxScaler(Module):
         return dict(
             scale=self._scale.to_json(),
             scale_dtype=self._scale.dtype.name,
-            scale_min=self._scale_min.to_json,
+            scale_min=self._scale_min.to_json(),
             scale_min_dtype=self._scale_min.dtype.name,
             select_col=self.select_col
         )
@@ -128,3 +143,4 @@ class MinMaxScaler(Module):
     def from_model(self, model):
         self._scale = pd.Series(json.loads(model["scale"]), dtype=model["scale_dtype"])
         self._scale_min = pd.Series(json.loads(model["scale_min"]), dtype=model["scale_min_dtype"])
+        self.select_col = model["select_col"]

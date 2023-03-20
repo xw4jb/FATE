@@ -123,16 +123,17 @@ def train(ctx, train_data, train_output_data, output_model, method, n_bins, spli
           bin_col, bin_idx, category_col, category_idx, use_anonymous, transform_method,
           skip_metrics, local_only, error_rate, adjustment_factor):
     from fate.ml.feature_binning import HeteroBinningModuleHost, HeteroBinningModuleGuest
-    columns = train_data.schema.columns
-    anonymous_columns = None
-    if use_anonymous:
-        anonymous_columns = train_data.schema.anonymous_columns
-        split_pt_dict = {columns[anonymous_columns.index(col)]: split_pt_dict[col] for col in split_pt_dict.keys()}
-    to_bin_cols, merged_category_col = get_to_bin_cols(columns, anonymous_columns,
-                                                       bin_col, bin_idx, category_col, category_idx)
 
     with ctx.sub_ctx("train") as sub_ctx:
         train_data = sub_ctx.reader(train_data).read_dataframe().data
+        columns = train_data.schema.columns
+        anonymous_columns = None
+        if use_anonymous:
+            anonymous_columns = train_data.schema.anonymous_columns
+            split_pt_dict = {columns[anonymous_columns.index(col)]: split_pt_dict[col] for col in split_pt_dict.keys()}
+        to_bin_cols, merged_category_col = get_to_bin_cols(columns, anonymous_columns,
+                                                           bin_col, bin_idx, category_col, category_idx)
+
         if sub_ctx.role.is_guest:
             binning = HeteroBinningModuleGuest(method, n_bins, split_pt_dict, to_bin_cols, transform_method,
                                                merged_category_col, local_only, error_rate, adjustment_factor)

@@ -1,6 +1,5 @@
 import pydantic
 
-from typing import Literal, Union
 from ._fields import StringChoice
 
 
