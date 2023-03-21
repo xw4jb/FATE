@@ -41,6 +41,7 @@ class BinColResults(object):
         self.iv = iv
         self._bin_anonymous = None
         self.optimal_metric_array = list(optimal_metric_array)
+        self.bin_count = None
 
     @property
     def bin_anonymous(self):
@@ -78,7 +79,7 @@ class BinColResults(object):
 
     @property
     def bin_nums(self):
-        return len(self.woe_array)
+        return len(self.split_points)
 
     def result_dict(self):
         save_dict = self.__dict__
@@ -167,6 +168,11 @@ class BinResults(object):
     def put_col_split_points(self, col_name, split_points):
         col_results = self.all_cols_results.get(col_name, BinColResults())
         col_results.set_split_points(split_points)
+        self.all_cols_results[col_name] = col_results
+
+    def put_col_bin_nums(self, col_name, bin_count):
+        col_results = self.all_cols_results.get(col_name)
+        col_results.bin_count = bin_count
         self.all_cols_results[col_name] = col_results
 
     def query_split_points(self, col_name):
