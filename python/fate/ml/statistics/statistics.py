@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import json
 import logging
 from typing import List
 
@@ -34,9 +33,9 @@ class FeatureStatistics(Module):
         self.summary.compute_metrics(train_data, self.metrics)
 
     def to_model(self):
-        return {"metrics": self.metrics,
-                "inner_metrics": self.summary.inner_metric_names,
-                "summary": self.summary.to_model()}
+        model = self.summary.to_model()
+        model["metrics"] = self.metrics
+        return model
 
     def restore(self, model):
         self.summary.restore(model)
@@ -56,7 +55,7 @@ class StatisticsSummary(Module):
                 self.inner_metric_names = metrics"""
         self.bias = bias
         self.inner_metric_names = []
-        self.summary = None
+        self.metrics_summary = None
         self._count = None
         self._nan_count = None
         self._mean = None
@@ -67,7 +66,7 @@ class StatisticsSummary(Module):
             metric_val = None
             if metric == "describe":
                 res = data.describe()
-                self.summary = res
+                self.metrics_summary = res
                 self.inner_metric_names = list(res.index)
                 return
             if metric == "count":
@@ -109,7 +108,7 @@ class StatisticsSummary(Module):
 
             res.loc[metric] = metric_val
 
-        self.summary = res
+        self.metrics_summary = res
         self.inner_metric_names = list(res.index)
 
     def compute_skewness(self, data):
@@ -171,9 +170,9 @@ class StatisticsSummary(Module):
         return kurtosis
 
     def to_model(self):
-        return {"inner_metrics": self.inner_metric_names,
-                "summary": self.summary.to_json()}
+        return {"inner_metric_names": self.inner_metric_names,
+                "metrics_summary": self.metrics_summary.to_dict()}
 
     def restore(self, model):
-        self.inner_metric_names = model["inner_metrics"]
-        self.summary = pd.DataFrame.from_dict(json.loads(model["summary"]))
+        self.inner_metric_names = model["inner_metric_names"]
+        self.metrics_summary = pd.DataFrame.from_dict(model["metrics_summary"])

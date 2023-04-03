@@ -80,7 +80,7 @@ def train(ctx, train_data, output_model, metrics, bias, skip_col, use_anonymous)
 
         model = stat_computer.to_model()
         with output_model as model_writer:
-            model_writer.write_model("statistics", model, metadata={})
+            model_writer.write_model("statistics", model, metadata={"model_type": "statistic"})
 
 
 def get_to_compute_cols(columns, anonymous_columns, skip_columns, use_anonymous):

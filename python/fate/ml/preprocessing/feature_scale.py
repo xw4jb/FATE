@@ -12,7 +12,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import json
 import logging
 
 import pandas as pd
@@ -72,16 +71,16 @@ class StandardScaler(Module):
 
     def to_model(self):
         return dict(
-            mean=self._mean.to_json(),
+            mean=self._mean.to_dict(),
             mean_dtype=self._mean.dtype.name,
-            std=self._std.to_json(),
+            std=self._std.to_dict(),
             std_dtype=self._std.dtype.name,
             select_col=self.select_col
         )
 
     def from_model(self, model):
-        self._mean = pd.Series(json.loads(model["mean"]), dtype=model["mean_dtype"])
-        self._std = pd.Series(json.loads(model["std"]), dtype=model["std_dtype"])
+        self._mean = pd.Series(model["mean"], dtype=model["mean_dtype"])
+        self._std = pd.Series(model["std"], dtype=model["std_dtype"])
         self.select_col = model["select_col"]
 
 
@@ -135,14 +134,14 @@ class MinMaxScaler(Module):
 
     def to_model(self):
         return dict(
-            scale=self._scale.to_json(),
+            scale=self._scale.to_dict(),
             scale_dtype=self._scale.dtype.name,
-            scale_min=self._scale_min.to_json(),
+            scale_min=self._scale_min.to_dit(),
             scale_min_dtype=self._scale_min.dtype.name,
             select_col=self.select_col
         )
 
     def from_model(self, model):
-        self._scale = pd.Series(json.loads(model["scale"]), dtype=model["scale_dtype"])
-        self._scale_min = pd.Series(json.loads(model["scale_min"]), dtype=model["scale_min_dtype"])
+        self._scale = pd.Series(model["scale"], dtype=model["scale_dtype"])
+        self._scale_min = pd.Series(model["scale_min"], dtype=model["scale_min_dtype"])
         self.select_col = model["select_col"]

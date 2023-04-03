@@ -16,6 +16,7 @@
 
 from ._cipher import CipherParamType, PaillierCipherParam
 from ._fields import confloat, conint, jsonschema, parse, string_choice
+from ._filter_param import StatisticFilterParam, IVFilterParam, ManualFilterParam
 from ._init_param import InitParam
 from ._learning_rate import LRSchedulerParam
 from ._metrics import metrics_param, statistic_metrics_param
