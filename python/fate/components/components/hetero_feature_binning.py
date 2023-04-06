@@ -95,7 +95,7 @@ def feature_binning_train(
         train_output_data,
         output_model,
 ):
-    train(ctx, train_data, train_output_data, output_model, method, n_bins, split_pt_dict,
+    train(ctx, train_data, train_output_data, output_model, role, method, n_bins, split_pt_dict,
           bin_col, bin_idx, category_col, category_idx, use_anonymous, transform_method,
           skip_metrics, local_only, error_rate, adjustment_factor)
 
@@ -122,14 +122,14 @@ def feature_binning_predict(
     predict(ctx, input_model, test_data, test_output_data, role, transform_method, skip_metrics, local_only)
 
 
-def train(ctx, train_data, train_output_data, output_model, method, n_bins, split_pt_dict,
+def train(ctx, train_data, train_output_data, output_model, role, method, n_bins, split_pt_dict,
           bin_col, bin_idx, category_col, category_idx, use_anonymous, transform_method,
           skip_metrics, local_only, error_rate, adjustment_factor):
     from fate.ml.feature_binning import HeteroBinningModuleHost, HeteroBinningModuleGuest
 
     with ctx.sub_ctx("train") as sub_ctx:
         train_data = sub_ctx.reader(train_data).read_dataframe().data
-        columns = train_data.schema.columns
+        columns = train_data.schema.columns.to_list()
         anonymous_columns = None
         if use_anonymous:
             anonymous_columns = train_data.schema.anonymous_columns
@@ -137,10 +137,10 @@ def train(ctx, train_data, train_output_data, output_model, method, n_bins, spli
         to_bin_cols, merged_category_col = get_to_bin_cols(columns, anonymous_columns,
                                                            bin_col, bin_idx, category_col, category_idx)
 
-        if sub_ctx.role.is_guest:
+        if role.is_guest:
             binning = HeteroBinningModuleGuest(method, n_bins, split_pt_dict, to_bin_cols, transform_method,
                                                merged_category_col, local_only, error_rate, adjustment_factor)
-        elif sub_ctx.role.is_host:
+        elif role.is_host:
             binning = HeteroBinningModuleHost(method, n_bins, split_pt_dict, to_bin_cols, transform_method,
                                               merged_category_col, local_only, error_rate, adjustment_factor)
         binning.fit(sub_ctx, train_data)
@@ -151,7 +151,8 @@ def train(ctx, train_data, train_output_data, output_model, method, n_bins, spli
         with output_model as model_writer:
             model_writer.write_model("feature_binning", model, metadata={"transform_method": transform_method,
                                                                          "skip_metrics": skip_metrics,
-                                                                         "local_only": local_only})
+                                                                         "local_only": local_only,
+                                                                         "model_type": "binning"})
 
     with ctx.sub_ctx("predict") as sub_ctx:
         output_data = train_data
@@ -171,8 +172,7 @@ def predict(ctx, input_model, test_data, test_output_data, role, transform_metho
             binning = HeteroBinningModuleGuest.from_model(model)
         elif role.is_host:
             binning = HeteroBinningModuleHost.from_model(model)
-        import json
-        model_meta = json.loads(model["meta_data"])
+        model_meta = model["meta_data"]
         binning.local_only = local_only or model_meta["local_only"]
         transform_method = transform_method or model_meta["transform_method"]
         skip_metrics = skip_metrics or model_meta["skip_metrics"]

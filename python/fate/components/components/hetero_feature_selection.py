@@ -40,22 +40,24 @@ def hetero_feature_selection(ctx, role):
 @cpn.parameter("method", type=List[params.string_choice(["manual", "binning", "statistic"])],
                default=["manual"], optional=False,
                desc="selection method, options: {manual, binning, statistic}")
-@cpn.parameter("iv_param", type=params.FilterParam,
+@cpn.parameter("select_col", type=List[str], default=None,
+               desc="list of column names to be selected, if None, all columns will be considered")
+@cpn.parameter("iv_param", type=params.IVFilterParam,
                default=params.IVFilterParam(metrics="iv", take_high=True,
                                             threshold=1, filter_type="threshold", host_thresholds=1,
                                             host_take_high=True,
                                             select_federated=True),
                desc="binning filter param")
-@cpn.parameter("statistic_param", type=params.FilterParam,
+@cpn.parameter("statistic_param", type=params.StatisticFilterParam,
                default=params.StatisicFilterParam(metrics="mean",
                                                   threshold=1, filter_type="threshold", take_high=True),
                desc="statistic filter param")
-@cpn.parameter("manual_param", type=params.FilterParam,
+@cpn.parameter("manual_param", type=params.ManualFilterParam,
                default=params.ManualFilterParam(filter_out_col=[], keep_col=[]),
                desc="note that manual filter will always be processed as the last filter")
-@cpn.parameter("keep_one", type=bool, default=True, desc="whether keep at least one feature")
+@cpn.parameter("keep_one", type=bool, default=True, desc="whether to keep at least one feature among `select_col`")
 @cpn.parameter("use_anonymous", type=bool, default=False,
-               desc="bool, whether interpret `filter_out_col` & `keep_col` as anonymous column names")
+               desc="bool, whether interpret `select_col` & `filter_out_col` & `keep_col` as anonymous column names")
 @cpn.artifact("train_output_data", type=Output[DatasetArtifact], roles=[GUEST, HOST])
 @cpn.artifact("output_model", type=Output[ModelArtifact], roles=[GUEST, HOST])
 def feature_selection_train(
@@ -64,6 +66,7 @@ def feature_selection_train(
         train_data,
         input_isometric_model,
         method,
+        select_col,
         iv_param,
         statistic_param,
         manual_param,
@@ -73,7 +76,7 @@ def feature_selection_train(
         output_model,
 ):
     train(ctx, train_data, train_output_data, input_isometric_model,
-          output_model, method, iv_param, statistic_param, manual_param,
+          output_model, method, select_col, iv_param, statistic_param, manual_param,
           keep_one, use_anonymous)
 
 
@@ -92,7 +95,7 @@ def feature_selection_predict(
 
 
 def train(ctx, train_data, train_output_data, input_isometric_model,
-          output_model, method, iv_param, statistic_param, manual_param,
+          output_model, method, select_col, iv_param, statistic_param, manual_param,
           keep_one, use_anonymous):
     from fate.ml.feature_selection import HeteroSelectionModuleHost, HeteroSelectionModuleGuest
 
@@ -108,6 +111,8 @@ def train(ctx, train_data, train_output_data, input_isometric_model,
         columns = train_data.schema.columns
         if use_anonymous:
             anonymous_columns = train_data.schema.anonymous_columns
+            if select_col is not None:
+                select_col = [columns[anonymous_columns.index(col)] for col in select_col]
             if manual_param.filter_out_col is not None:
                 filter_out_col = [columns[anonymous_columns.index(col)] for col in manual_param.filter_out_col]
                 manual_param.filter_out_col = filter_out_col
@@ -116,16 +121,17 @@ def train(ctx, train_data, train_output_data, input_isometric_model,
                 manual_param.keep_col = keep_col
 
         if sub_ctx.is_on_guest():
-            selection = HeteroSelectionModuleGuest(method, isometric_model_dict,
+            selection = HeteroSelectionModuleGuest(method, select_col, isometric_model_dict,
                                                    iv_param, statistic_param, manual_param,
                                                    keep_one)
         elif sub_ctx.is_on_host():
-            selection = HeteroSelectionModuleHost(method, isometric_model_dict,
+            selection = HeteroSelectionModuleHost(method, select_col, isometric_model_dict,
                                                   iv_param, statistic_param, manual_param,
                                                   keep_one)
         selection.fit(sub_ctx, train_data)
         model = selection.to_model()
         with output_model as model_writer:
+            # @todo: maybe rm method from meta
             model_writer.write_model("feature_selection", model, metadata={"method": method})
 
     with ctx.sub_ctx("predict") as sub_ctx:

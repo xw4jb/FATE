@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import json
 import logging
 
 import numpy as np
@@ -75,8 +74,10 @@ class HeteroBinningModuleGuest(Module):
         return transformed_data
 
     def to_model(self):
-        bin_info = self._bin_obj.to_model()
-        return dict(bin_info=bin_info, method=self.method)
+        model_info = self._bin_obj.to_model()
+        model_info["method"] = self.method
+        model_info["metrics"] = ["iv"] if model_info.get("metrics_summary") else []
+        return model_info
 
     def restore(self, model):
         self._bin_obj.restore(model)
@@ -129,8 +130,9 @@ class HeteroBinningModuleHost(Module):
         return self._bin_obj.transform(ctx, test_data)
 
     def to_model(self):
-        bin_info = self._bin_obj.to_model()
-        return dict(bin_info=bin_info, method=self.method)
+        model_info = self._bin_obj.to_model()
+        model_info["method"] = self.method
+        return model_info
 
     def restore(self, model):
         self._bin_obj.restore(model)
@@ -164,7 +166,7 @@ class StandardBinning(Module):
         self._woe_dict = None
         # for prediction transform
         self._train_woe_dict = None
-        # {col_name: {"iv_array": [], "woe_array": [], "event_count": []...}}
+        # {col_name: {"iv_array": [], "woe": [], "event_count": []...}}
         self._metrics_summary = None
         self._host_metrics_summary = None
         self._train_metrics_summary = None
@@ -228,26 +230,26 @@ class StandardBinning(Module):
         return binned_df
 
     """@staticmethod
-    def is_monotonic(woe_array):
+    def is_monotonic(woe):
         # Check the woe is monotonic or not
         
-        if len(woe_array) <= 1:
+        if len(woe) <= 1:
             return torch.tensor([True])
 
-        is_increasing = torch.all(woe_array[1:] > woe_array[:-1])
-        is_decreasing = torch.all(woe_array[1:] < woe_array[:-1])
+        is_increasing = torch.all(woe[1:] > woe[:-1])
+        is_decreasing = torch.all(woe[1:] < woe[:-1])
         return is_increasing or is_decreasing"""
 
     @staticmethod
-    def is_monotonic(woe_array):
+    def is_monotonic(woe):
         """
         Check the woe is monotonic or not
         """
-        if len(woe_array) <= 1:
+        if len(woe) <= 1:
             return True
 
-        is_increasing = all(woe_array[1:] > woe_array[:-1])
-        is_decreasing = all(woe_array[1:] < woe_array[:-1])
+        is_increasing = all(woe[1:] > woe[:-1])
+        is_decreasing = all(woe[1:] < woe[:-1])
         return is_increasing or is_decreasing
 
     def compute_metrics_from_count(self, event_count_array, non_event_count_array,
@@ -258,34 +260,6 @@ class StandardBinning(Module):
         bin_woe = torch.log(event_rate / non_event_rate)
         bin_iv = (event_rate - non_event_rate) * bin_woe
         return event_rate, non_event_rate, bin_woe, bin_iv
-
-    """def compute_all_col_metrics(self, col_list, event_count_hist, non_event_count_hist):
-        total_event_count, total_non_event_count = None, None
-        metrics_summary = {}
-        woe_dict = {}
-        for col in col_list:
-            col_summary = {}
-            event_count_array = event_count_hist[col].as_tensor()
-            non_event_count_array = non_event_count_hist[col].as_tensor()
-            if total_event_count is None:
-                total_event_count = torch.max(torch.sum(event_count_array), torch.tensor(1))
-                total_non_event_count = torch.max(torch.sum(non_event_count_array), torch.tensor(1))
-
-            event_rate, non_event_rate, bin_woe, bin_iv = self.compute_metrics_from_count(event_count_array,
-                                                                                          non_event_count_array,
-                                                                                          total_event_count,
-                                                                                          total_non_event_count)
-            col_summary["event_count"] = event_count_array.tolist()
-            col_summary["non_event_count"] = non_event_count_array.tolist()
-            col_summary["event_rate"] = event_rate.tolist()
-            col_summary["non_event_rate"] = non_event_rate.tolist()
-            col_summary["woe_array"] = bin_woe.tolist()
-            col_summary["iv_array"] = bin_iv.tolist()
-            col_summary["is_monotonic"] = StandardBinning.is_monotonic(bin_woe).tolist()
-            col_summary["col_iv"] = bin_iv.sum().tolist()
-            metrics_summary[col] = col_summary
-            woe_dict[col] = bin_woe.tolist()
-        return metrics_summary, woe_dict"""
 
     def compute_all_col_metrics(self, event_count_hist, non_event_count_hist):
         # pd.DataFrame ver
@@ -305,10 +279,10 @@ class StandardBinning(Module):
         metrics_summary["non_event_count"] = non_event_count_hist.to_dict()
         metrics_summary["event_rate"] = event_rate.to_dict()
         metrics_summary["non_event_rate"] = non_event_rate.to_dictt()
-        metrics_summary["woe_array"] = bin_woe.to_dict()
+        metrics_summary["woe"] = bin_woe.to_dict()
         metrics_summary["iv_array"] = bin_iv.to_dict()
         metrics_summary["is_monotonic"] = bin_woe.apply(StandardBinning.is_monotonic, axis=0).to_dict()
-        metrics_summary["col_iv"] = bin_iv.sum().to_dict()
+        metrics_summary["iv"] = bin_iv.sum().to_dict()
         # @todo: maybe convert to {col_name: List[woe_0, woe_1]}
         woe_dict = bin_woe.to_dict()
         return metrics_summary, woe_dict
@@ -341,23 +315,39 @@ class StandardBinning(Module):
     def to_model(self):
         return dict(
             method=self.method,
-            split_pt_dict=json.dumps(self._split_pt_dict),
-            bin_idx_dict=json.dumps(self._bin_idx_dict),
-            bin_count=json.dumps(self._bin_count),
-            metrics_summary=json.dumps(self._metrics_summary),
-            host_metrics_summary=json.dumps(self._host_metrics_summary),
-            woe_dict=json.dumps(self._woe_dict),
+            split_pt_dict=self._split_pt_dict,
+            bin_idx_dict=self._bin_idx_dict,
+            bin_count=self._bin_count,
+            metrics_summary=self._metrics_summary,
+            train_metrics_summary=self._train_metrics_summary,
+            host_metrics_summary=self._host_metrics_summary,
+            train_host_metrics_summary=self._train_host_metrics_summary,
+            woe_dict=self._woe_dict,
             category_col=self.category_col,
             adjustment_factor=self.adjustment_factor
         )
 
     def restore(self, model):
         self.method = model["method"]
-        self._split_pt_dict = json.loads(model["split_pt_dict"])
-        self._bin_idx_dict = json.loads(model["bin_idx_dict"])
-        self._bin_count = json.load(model["bin_count"])
-        self._train_metrics_summary = json.loads(model["metrics_summary"])
-        self._train_woe_dict = json.loads(model["woe_dict"])
-        self._train_host_metrics_summary = json.loads(model["host_train_metrics_summary"])
+        self._split_pt_dict = model["split_pt_dict"]
+        self._bin_idx_dict = model["bin_idx_dict"]
+        self._bin_count = model["bin_count"]
+        # load predict model
+        if model["train_metrics_summary"]:
+            self._metrics_summary = model["metrics_summary"]
+            self._train_metrics_summary = model["train_metrics_summary"]
+        else:
+            self._train_metrics_summary = model["metrics_summary"]
+        if model["train_host_metrics_summary"]:
+            self._host_metrics_summary = model["host_metrics_summary"]
+            self._train_host_metrics_summary = model["train_host_metrics_summary"]
+        else:
+            self._train_host_metrics_summary = model["host_metrics_summary"]
+        if model["train_woe_dict"]:
+            self._woe_dict = model["woe_dict"]
+            self._train_woe_dict = model["train_woe_dict"]
+        else:
+            self._train_woe_dict = model["woe_dict"]
+
         self.category_col = model["category_col"]
         self.adjustment_factor = model["adjustment_factor"]

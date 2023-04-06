@@ -26,55 +26,58 @@ from ..abc.module import Module
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_METRIC = {"iv": ["iv"], "statistic": ["mean"]}
+
 
 class HeteroSelectionModuleGuest(Module):
-    def __init__(self, method, isometric_model_dict=None,
+    def __init__(self, method=None, select_col=None, isometric_model_dict=None,
                  iv_param=None, statistic_param=None, manual_param=None,
                  keep_one=True):
         self.method = method
+        self.select_col = select_col
         self.isometric_model_dict = isometric_model_dict
         self.iv_param = iv_param
         self.statistic_param = statistic_param
         self.manual_param = manual_param
         self.keep_one = keep_one
-        # for display of cascade order
-        self._inner_method = [None] * len(method)
-        self._selection_obj = [None] * len(method)
+        # keep selection history
+        self._inner_method = []
+        self._selection_obj = []
 
     def fit(self, ctx: Context, train_data, validate_data=None) -> None:
-        header = train_data.schema.columns
+        if self.select_col is None:
+            self.select_col = train_data.schema.columns.to_list()
+
+        select_data = train_data[self.select_col]
+        header = select_data.schema.columns.to_list()
         for i, filter_type in enumerate(self.method):
             if filter_type == "manual":
-                selection_obj = ManualSelection(method=self.method,
+                selection_obj = ManualSelection(method=filter_type,
                                                 header=header,
                                                 param=self.manual_param,
                                                 keep_one=self.keep_one)
-                self._selection_obj[-1] = selection_obj
-                self._inner_method[-1] = "manual"
             elif filter_type == "iv":
                 model = self.isometric_model_dict.get("binning", None)
                 if model is None:
                     raise ValueError(f"Cannot find binning model in input, please check")
-                selection_obj = StandardSelection(method=self.method,
+                selection_obj = StandardSelection(method=filter_type,
                                                   header=header,
                                                   param=self.iv_param,
                                                   model=model,
                                                   keep_one=self.keep_one)
-                self._selection_obj[i] = selection_obj
-                self._inner_method[i] = "iv"
             elif filter_type == "statistic":
                 model = self.isometric_model_dict.get("statistic", None)
                 if model is None:
                     raise ValueError(f"Cannot find statistic model in input, please check")
-                selection_obj = StandardSelection(method=self.method,
+                selection_obj = StandardSelection(method=filter_type,
                                                   header=header,
                                                   param=self.statistic_param,
                                                   model=model,
                                                   keep_one=self.keep_one)
-                self._selection_obj[i] = selection_obj
-                self._inner_method[i] = "statistic"
             else:
                 raise ValueError(f"{filter_type} selection method not supported, please check")
+            self._selection_obj.append(selection_obj)
+            self._inner_method.append(filter_type)
 
         prev_selection_obj = None
         for method, selection_obj in zip(self._inner_method, self._selection_obj):
@@ -82,13 +85,14 @@ class HeteroSelectionModuleGuest(Module):
                 selection_obj.set_prev_selected_mask(copy.deepcopy(prev_selection_obj._selected_mask))
                 if isinstance(selection_obj, StandardSelection) and isinstance(prev_selection_obj, StandardSelection):
                     selection_obj.set_host_prev_selected_mask(copy.deepcopy(prev_selection_obj._host_selected_mask))
-            selection_obj.fit(ctx, train_data, validate_data)
+            selection_obj.fit(ctx, select_data)
             if method == "binning":
                 if self.iv_param.select_federated:
-                    self.sync_select_federated(ctx, selection_obj)
+                    HeteroSelectionModuleGuest.sync_select_federated(ctx, selection_obj)
             prev_selection_obj = selection_obj
 
-    def sync_select_federated(self, ctx: Context, selection_obj):
+    @staticmethod
+    def sync_select_federated(ctx: Context, selection_obj):
         logger.info(f"Sync federated selection.")
         for i, host in enumerate(ctx.hosts):
             federated_mask = selection_obj._host_selected_mask[host]
@@ -103,27 +107,33 @@ class HeteroSelectionModuleGuest(Module):
         selection_obj_list = []
         for selection_obj in self._selection_obj:
             selection_obj_list.append(selection_obj.to_model())
-        return {"selection_obj_list": json.dumps(selection_obj_list)}
+        return {"selection_obj_list": json.dumps(selection_obj_list),
+                "method": self.method,
+                "select_col": self.select_col,
+                "inner_method": self._inner_method}
 
     def restore(self, model):
         selection_obj_list = []
         selection_obj_model_list = json.loads(model["selection_obj_list"])
         for i, selection_model in enumerate(selection_obj_model_list):
-            selection_obj = StandardSelection(self._inner_method[i])
+            if selection_model["method"] in ["manual"]:
+                selection_obj = ManualSelection(method=self._inner_method[i])
+            else:
+                selection_obj = StandardSelection(method=self._inner_method[i])
             selection_obj.restore(selection_model)
             selection_obj_list.append(selection_obj)
         self._selection_obj = selection_obj_list
 
     @classmethod
     def from_model(cls, model) -> "HeteroSelectionModuleGuest":
-        selection_obj = HeteroSelectionModuleGuest(model["method"])
-        selection_obj._inner_method = model["_inner_method"]
+        selection_obj = HeteroSelectionModuleGuest(model["method"], model["select_col"])
+        selection_obj._inner_method = model["inner_method"]
         selection_obj.restore(model)
         return selection_obj
 
 
 class HeteroSelectionModuleHost(Module):
-    def __init__(self, method, isometric_model_dict=None,
+    def __init__(self, method=None, select_col=None, isometric_model_dict=None,
                  iv_param=None, statistic_param=None, manual_param=None,
                  keep_one=True):
         self.method = method
@@ -132,32 +142,36 @@ class HeteroSelectionModuleHost(Module):
         self.statistic_param = statistic_param
         self.manual_param = manual_param
         self.keep_one = keep_one
+        self.select_col = select_col
         # for display of cascade order
         self._inner_method = [None] * len(method)
         self._selection_obj = [None] * len(method)
 
     def fit(self, ctx: Context, train_data, validate_data=None) -> None:
-        header = train_data.schema.columns
-        for i, type in enumerate(self.method):
-            if type == "manual":
-                selection_obj = ManualSelection(method=self.method,
+        if self.select_col is None:
+            self.select_col = train_data.schema.columns.to_list()
+        select_data = train_data[self.select_col]
+        header = select_data.schema.columns.to_list()
+        for i, filter_type in enumerate(self.method):
+            if filter_type == "manual":
+                selection_obj = ManualSelection(method=filter_type,
                                                 header=header,
                                                 param=self.manual_param,
                                                 keep_one=self.keep_one)
-                self._selection_obj[-1] = selection_obj
-                self._inner_method[-1] = "manual"
-            elif type == "iv":
+                self._selection_obj[i] = selection_obj
+                self._inner_method[i] = "manual"
+            elif filter_type == "iv":
                 model = self.isometric_model_dict["binning"]
-                selection_obj = StandardSelection(method=self.method,
+                selection_obj = StandardSelection(method=filter_type,
                                                   header=header,
                                                   param=self.iv_param,
                                                   model=model,
                                                   keep_one=self.keep_one)
                 self._selection_obj[i] = selection_obj
                 self._inner_method[i] = "iv"
-            elif type == "statistic":
+            elif filter_type == "statistic":
                 model = self.isometric_model_dict["statistic"]
-                selection_obj = StandardSelection(method=self.method,
+                selection_obj = StandardSelection(method=filter_type,
                                                   header=header,
                                                   param=self.statistic_param,
                                                   model=model,
@@ -172,13 +186,24 @@ class HeteroSelectionModuleHost(Module):
             if prev_selection_obj:
                 selection_obj.set_prev_selected_mask(copy.deepcopy(prev_selection_obj._selected_mask))
             selection_obj.fit(ctx, train_data, validate_data)
-            if method == "binning":
+            if method == "iv":
                 if self.iv_param.select_federated:
-                    self.sync_select_federated(ctx, selection_obj)
+                    HeteroSelectionModuleHost.sync_select_federated(ctx, selection_obj, train_data)
             prev_selection_obj = selection_obj
 
-    def sync_select_federated(self, ctx: Context, selection_obj):
-        selected_mask = ctx.guest.get(f"selected_mask_{selection_obj.method}")
+    @staticmethod
+    def sync_select_federated(ctx: Context, selection_obj, data):
+        cur_selected_mask = ctx.guest.get(f"selected_mask_{selection_obj.method}")
+        columns, anonymous_columns = data.schema.columns, data.schema.anonymous_columns
+        new_index = [columns[anonymous_columns.index(col)] for col in cur_selected_mask.index]
+        cur_selected_mask.index = new_index
+        prev_selected_mask = selection_obj._prev_selected_mask[selection_obj._prev_selected_mask]
+        missing_col = set(prev_selected_mask.index).difference(set(new_index))
+        if missing_col:
+            raise ValueError(
+                f"results for columns: {missing_col} not found in received selection result.")
+        cur_selected_mask = [cur_selected_mask.get(col, False) for col in selection_obj._header]
+        selected_mask = selection_obj._prev_selected_mask & cur_selected_mask
         selection_obj.set_selected_mask(selected_mask)
 
     def transform(self, ctx: Context, test_data):
@@ -186,25 +211,31 @@ class HeteroSelectionModuleHost(Module):
         return transformed_data
 
     def to_model(self):
-        # all selection obj need to be recorded for display of cascade order
+        # all selection history need to be recorded for display
         selection_obj_list = []
         for selection_obj in self._selection_obj:
             selection_obj_list.append(selection_obj.to_model())
-        return {"selection_obj_list": json.dumps(selection_obj_list)}
+        return {"selection_obj_list": json.dumps(selection_obj_list),
+                "method": self.method,
+                "select_col": self.select_col,
+                "inner_method": self._inner_method}
 
     def restore(self, model):
         selection_obj_list = []
         selection_obj_model_list = json.loads(model["selection_obj_list"])
         for i, selection_model in enumerate(selection_obj_model_list):
-            selection_obj = StandardSelection(self._inner_method[i])
+            if selection_model["method"] in ["manual"]:
+                selection_obj = ManualSelection(method=self._inner_method[i])
+            else:
+                selection_obj = StandardSelection(method=self._inner_method[i])
             selection_obj.restore(selection_model)
             selection_obj_list.append(selection_obj)
         self._selection_obj = selection_obj_list
 
     @classmethod
     def from_model(cls, model) -> "HeteroSelectionModuleHost":
-        selection_obj = HeteroSelectionModuleHost(model["method"])
-        selection_obj._inner_method = model["_inner_method"]
+        selection_obj = HeteroSelectionModuleHost(model["method"], model["select_col"])
+        selection_obj._inner_method = model["inner_method"]
         selection_obj.restore(model)
         return selection_obj
 
@@ -230,33 +261,41 @@ class ManualSelection(Module):
         self._prev_selected_mask = mask
 
     def fit(self, ctx: Context, train_data, validate_data=None):
-        header = train_data.schema.columns
+        header = train_data.schema.columns.to_list()
         if self._header is None:
             self._header = header
             self._prev_selected_mask = pd.Series(np.ones(len(header)), dtype=bool, index=header)
 
-        filter_out_col = self.param["filter_out_col"]
-        keep_col = self.param["keep_col"]
-        if len(filter_out_col) >= len(header):
-            raise ValueError("`filter_out_col` should not be all columns")
+        filter_out_col = self.param.get("filter_out_col", None)
+        keep_col = self.param.get("keep_col", None)
         if filter_out_col is None:
             filter_out_col = []
         if keep_col is None:
             keep_col = []
+        if len(filter_out_col) >= len(header):
+            raise ValueError("`filter_out_col` should not be all columns")
         filter_out_col = set(filter_out_col)
         keep_col = set(keep_col)
-        filter_out_mask = [0 if col in filter_out_col else 1 for col in self._header]
-        keep_mask = [1 if col in keep_col else 0 for col in self._header]
+        missing_col = (filter_out_col.union(keep_col)). \
+            difference(set(self._prev_selected_mask.index))
+        if missing_col:
+            raise ValueError(f"columns {missing_col} given in `filter_out_col` & `keep_col` "
+                             f"not found in `select_col` or header")
+        filter_out_mask = pd.Series([False if col in filter_out_col else True for col in self._header],
+                                    index=self._header)
+        # keep_mask = [True if col in keep_col else False for col in self._header]
         selected_mask = self._prev_selected_mask & filter_out_mask
-        selected_mask += keep_mask
-        self._selected_mask = selected_mask > 0
+        selected_mask.loc[keep_col] = True
+        self._selected_mask = selected_mask
         if self.keep_one:
-            StandardSelection._keep_one(self._selected_mask, self._prev_selected_mask)
+            StandardSelection._keep_one(self._selected_mask, self._header)
 
     def transform(self, ctx: Context, transform_data):
         logger.debug(f"Start transform")
-        select_cols = [col for col, mask in zip(self._header, self._selected_mask) if mask]
+        drop_cols = set(self._selected_mask[~self._selected_mask].index)
+        select_cols = [col for col in transform_data.schema.columns.to_list() if col not in drop_cols]
         return transform_data[select_cols]
+
 
     def to_model(self):
         return dict(
@@ -268,22 +307,25 @@ class ManualSelection(Module):
     def restore(self, model):
         self.method = model["method"]
         self.keep_one = model["keep_one"]
-        self._selected_mask = pd.Series(["selected_mask"])
+        self._selected_mask = pd.Series(["selected_mask"], dtype=bool)
 
 
 class StandardSelection(Module):
-    def __init__(self, header, method, param=None, model=None, keep_one=True):
+    def __init__(self, method, header=None, param=None, model=None, keep_one=True):
         self.method = method
         self.param = param
         self.filter_conf = {}
-        for metric_name, filter_type, threshold, high_take in zip(self.param["metrics"],
-                                                                  self.param["filter_type",
-                                                                  self.param["threshold"],
-                                                                  self.param["take_high"]]):
-            metric_conf = self.filter_conf.get(metric_name, {})
-            metric_conf["filter_type"] = metric_conf.get("filter_type", []) + [filter_type]
-            metric_conf["threshold"] = metric_conf.get("threshold", []) + [threshold]
-            metric_conf["take_high"] = metric_conf.get("take_high", []) + [high_take]
+        if param is not None:
+            for metric_name, filter_type, threshold, take_high in zip(
+                    self.param.get("metrics", DEFAULT_METRIC.get(method)),
+                    self.param.get("filter_type", ['threshold']),
+                    self.param.get("threshold", [1.0]),
+                    self.param.get("take_high", [True])):
+                metric_conf = self.filter_conf.get(metric_name, {})
+                metric_conf["filter_type"] = metric_conf.get("filter_type", []) + [filter_type]
+                metric_conf["threshold"] = metric_conf.get("threshold", []) + [threshold]
+                metric_conf["take_high"] = metric_conf.get("take_high", []) + [take_high]
+                self.filter_conf[metric_name] = metric_conf
         self.model = self.convert_model(model)
         self.keep_one = keep_one
         self._header = header
@@ -297,7 +339,7 @@ class StandardSelection(Module):
         self._all_host_selected_mask = {}
         self._host_prev_selected_mask = {}
         self._all_metrics = None
-        self._all_host_metrics = None
+        self._all_host_metrics = {}
 
     @staticmethod
     def convert_model(input_model):
@@ -311,7 +353,7 @@ class StandardSelection(Module):
 
     def fit(self, ctx: Context, train_data, validate_data=None):
         if self._header is None:
-            header = train_data.schema.columns
+            header = train_data.schema.columns.to_list()
             self._header = header
             self._prev_selected_mask = pd.Series(np.ones(len(header)), dtype=bool, index=header)
         """if self.method == "manual":
@@ -331,16 +373,22 @@ class StandardSelection(Module):
             if self.keep_one:
                 self._keep_one()
         """
-        metric_names = self.param.metrics
+        metric_names = self.param.get("metrics", [])
         # local only
         if self.method in ["statistic"]:
             for metric_name in metric_names:
-                if metric_name not in self.model["metrics"]:
+                if metric_name not in self.model.get("metrics", {}):
                     raise ValueError(f"metric {metric_name} not found in given statistic model with metrics: "
                                      f"{metric_names}, please check")
 
-            metrics_all = pd.DataFrame(self.model["metrics_summary"]).loc[metric_names]
+            metrics_all = pd.DataFrame(self.model.get("metrics_summary", {})).loc[metric_names]
             self._all_metrics = metrics_all
+            missing_col = set(self._prev_selected_mask[self._prev_selected_mask].index). \
+                difference(set(metrics_all.columns))
+            if missing_col:
+                raise ValueError(
+                    f"metrics for columns {missing_col} from `select_col` or header not found in given model.")
+
             """ mask_all = metrics_all.apply(lambda r: StandardSelection.filter_multiple_metrics(r,
                                                                                              self.param.filter_type,
                                                                                              self.param.threshold,
@@ -348,11 +396,16 @@ class StandardSelection(Module):
                                                                                              metric_names), axis=1)"""
             mask_all = self.apply_filter(metrics_all, self.filter_conf)
             self._all_selected_mask = mask_all
-            self._selected_mask = self._prev_selected_mask & mask_all.all(axis=0)
+            cur_selected_mask = mask_all.all(axis=0)
+            cur_selected_mask = [cur_selected_mask.get(col, False) for col in self._header]
+            self._selected_mask = self._prev_selected_mask & cur_selected_mask
             if self.keep_one:
-                self._keep_one(self._selected_mask, self._prev_selected_mask)
+                self._keep_one(self._selected_mask, self._prev_selected_mask, self._header)
         # federated selection possible
         elif self.method == "iv":
+            # host does not perform local iv selection
+            if ctx.local[0] == "host":
+                return
             iv_metrics = pd.Series(self.model["metrics_summary"]["iv"])
             metrics_all = pd.DataFrame(iv_metrics).T.rename({0: "iv"}, axis=0)
             self._all_metrics = metrics_all
@@ -365,14 +418,17 @@ class StandardSelection(Module):
             """
             mask_all = self.apply_filter(metrics_all, self.filter_conf)
             self._all_selected_mask = mask_all
-            self._selected_mask = self._prev_selected_mask & mask_all.all(axis=0)
+            cur_selected_mask = mask_all.all(axis=0)
+            cur_selected_mask = [cur_selected_mask.get(col, False) for col in self._header]
+            self._selected_mask = self._prev_selected_mask & cur_selected_mask
             if self.keep_one:
-                self._keep_one(self._selected_mask, self._prev_selected_mask)
-            if self.param.select_federated:
+                self._keep_one(self._selected_mask, self._prev_selected_mask, self._header)
+            if self.param.get("select_federated", True):
                 host_metrics_summary = self.model["host_train_metrics_summary"]
                 for host, host_metrics in host_metrics_summary.items():
                     iv_metrics = pd.Series(host_metrics["iv"])
                     metrics_all = pd.DataFrame(iv_metrics).T.rename({0: "iv"}, axis=0)
+                    self._all_host_metrics[host] = metrics_all
                     """host_mask_all = metrics_all.apply(lambda r:
                                                  StandardSelection.filter_multiple_metrics(r,
                                                                                            self.param.host_filter_type,
@@ -382,27 +438,30 @@ class StandardSelection(Module):
                     """
                     host_mask_all = self.apply_filter(metrics_all,
                                                       self.filter_conf)
-                    self._all_host_selected_mask = host_mask_all
-                    host_prev_selected_mask = self._host_prev_selected_mask.get(host)
+                    self._all_host_selected_mask[host] = host_mask_all
+                    """host_prev_selected_mask = self._host_prev_selected_mask.get(host)
                     if host_prev_selected_mask is None:
                         host_prev_selected_mask = pd.Series(np.ones(len(iv_metrics.index)),
                                                             index=iv_metrics.index)
-                        self._host_prev_selected_mask[host] = host_prev_selected_mask
-                    host_selected_mask = self._host_prev_selected_mask.get(host) & host_mask_all.all(axis=0)
+                        self._host_prev_selected_mask[host] = host_prev_selected_mask"""
+
+                    host_selected_mask = host_mask_all.all(axis=0)
                     if self.keep_one:
-                        self._keep_one(host_selected_mask,
-                                       host_prev_selected_mask)
+                        self._keep_one(host_selected_mask)
                     self._host_selected_mask[host] = host_selected_mask
 
     @staticmethod
-    def _keep_one(cur_mask=None, last_mask=None):
-        if last_mask is None:
-            return cur_mask
+    def _keep_one(cur_mask, prev_mask=None, select_col=None):
         if sum(cur_mask) > 0:
             return cur_mask
         else:
-            choice_mask = last_mask.index[last_mask]
-            cur_mask[random.choice(choice_mask.index)] = True
+            if prev_mask is not None:
+                idx = random.choice(prev_mask[prev_mask].index)
+            elif select_col is not None:
+                idx = random.choice(select_col)
+            else:
+                idx = random.choice(cur_mask.index)
+            cur_mask[idx] = True
 
     @staticmethod
     def convert_series_metric_to_dataframe(metrics, metric_name):
@@ -421,8 +480,11 @@ class StandardSelection(Module):
         threshold_list = metric_conf["threshold"]
         take_high_list = metric_conf["take_high"]
         result = pd.Series(np.ones(len(metrics.index)), index=metrics.index, dtype=bool)
-        for idx, method in enumerate(filter_type_list):
-            result &= StandardSelection.filter_metrics(metrics, method, threshold_list[idx], take_high_list[idx])
+        for idx in range(len(filter_type_list)):
+            result &= StandardSelection.filter_metrics(metrics,
+                                                       filter_type_list[idx],
+                                                       threshold_list[idx],
+                                                       take_high_list[idx])
         return result
 
     @staticmethod
@@ -462,7 +524,9 @@ class StandardSelection(Module):
 
     def transform(self, ctx: Context, transform_data):
         logger.debug(f"Start transform")
-        select_cols = self._selected_mask[self._selected_mask]
+        drop_cols = set(self._selected_mask[~self._selected_mask].index)
+        cols = transform_data.schema.columns.to_list()
+        select_cols = [col for col in cols if col not in drop_cols]
         return transform_data[select_cols]
 
     def to_model(self):
@@ -471,7 +535,7 @@ class StandardSelection(Module):
             keep_one=self.keep_one,
             all_selected_mask=self._all_selected_mask.to_dict(),
             all_metrics=self._all_metrics.to_dict(),
-            all_host_metrics=self._all_host_metrics.to_dict(),
+            all_host_metrics={k: v.to_dict() for k, v in self._all_host_metrics.items()},
             selected_mask=self._selected_mask.to_dict(),
             host_selected_mask={k: v.to_dict() for k, v in self._host_selected_mask.items()},
             all_host_selected_mask={k: v.to_dict() for k, v in self._all_host_selected_mask.items()},
@@ -480,9 +544,10 @@ class StandardSelection(Module):
     def restore(self, model):
         self.method = model["method"]
         self.keep_one = model["keep_one"]
-        self._selected_mask = pd.Series(["selected_mask"])
-        self._all_selected_mask = pd.DataFrame(model["all_selected_mask"])
+        self._selected_mask = pd.Series(["selected_mask"], dtype=bool)
+        self._all_selected_mask = pd.DataFrame(model["all_selected_mask"], dtype=bool)
         self._all_metrics = pd.DataFrame(model["all_metrics"])
-        self._host_selected_mask = {k: pd.Series(v) for k, v in model["host_selected_mask"].items()}
-        self._all_host_selected_mask = pd.DataFrame(model["all_host_selected_mask"])
-        self._all_host_metrics = pd.DataFrame(model["all_host_metrics"])
+        self._host_selected_mask = {k: pd.Series(v, dtype=bool) for k, v in model["host_selected_mask"].items()}
+        self._all_host_selected_mask = {k: pd.DataFrame(v, dtype=bool) for
+                                        k, v in model["all_host_selected_mask"].items()}
+        self._all_host_metrics = {k: pd.DataFrame(v) for k, v in model["all_host_metrics"].items()}

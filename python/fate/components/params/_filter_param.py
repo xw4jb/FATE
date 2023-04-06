@@ -63,11 +63,11 @@ class ManualFilterParam(pydantic.BaseModel):
     keep_col: List[str] = []
     left_out_col: List[str] = []
 
-    @pydantic.validator('keep_col', 'left_out_col')
-    def no_intersection(cls, v, values):
-        other_field = 'left_out_col' if 'keep_col' in values else 'keep_col'
-        other_list = values.get(other_field, [])
-        intersection = set(v).intersection(set(other_list))
+    @pydantic.root_validator(pre=False)
+    def no_intersection(cls, values):
+        left_out_col = values.get('left_out_col', [])
+        keep_col = values.get('keep_col', [])
+        intersection = set(left_out_col).intersection(set(keep_col))
         if intersection:
-            raise ValueError(f"{other_field}: {other_list} have intersection with {v}: {intersection}")
-        return v
+            raise ValueError(f"`keep_col` and `left_out_col` share common elements: {intersection}")
+        return values
