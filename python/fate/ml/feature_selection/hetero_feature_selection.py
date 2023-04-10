@@ -242,7 +242,7 @@ class HeteroSelectionModuleHost(Module):
 
 class ManualSelection(Module):
     def __init__(self, method, param=None, header=None, model=None, keep_one=True):
-        assert method == "manual", f"only 'manual' is accepted, received {method} instead."
+        assert method == "manual", f"Manual Selection only accepts 'manual' as `method`, received {method} instead."
         self.method = method
         self.param = param
         self.model = model
@@ -488,15 +488,15 @@ class StandardSelection(Module):
         return result
 
     @staticmethod
-    def filter_metrics(metrics, method, threshold, take_high=True):
-        if method == "top_k":
+    def filter_metrics(metrics, filter_type, threshold, take_high=True):
+        if filter_type == "top_k":
             return StandardSelection.filter_by_top_k(metrics, threshold, take_high)
-        elif method == "threshold":
+        elif filter_type == "threshold":
             return StandardSelection.filter_by_threshold(metrics, threshold, take_high)
-        elif method == "percentile":
+        elif filter_type == "percentile":
             return StandardSelection.filter_by_percentile(metrics, threshold, take_high)
         else:
-            raise ValueError(f"method {method} not supported, please check")
+            raise ValueError(f"filter_type {filter_type} not supported, please check")
 
     @staticmethod
     def filter_by_top_k(metrics, k, take_high=True):
@@ -504,8 +504,8 @@ class StandardSelection(Module):
         if k == 0:
             return pd.Series(np.ones(len(metrics)), dtype=bool)
         # stable sort
-        ordered_metrics = metrics.sort_values(ascending=~take_high, kind="mergesort")
-        select_k = ordered_metrics.index[:k].index
+        ordered_metrics = metrics.sort_values(ascending=not take_high, kind="mergesort")
+        select_k = ordered_metrics.index[:k]
         return metrics.index.isin(select_k)
 
     @staticmethod

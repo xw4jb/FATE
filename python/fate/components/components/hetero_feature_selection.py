@@ -108,9 +108,9 @@ def train(ctx, train_data, train_output_data, input_isometric_model,
                 isometric_model_dict[model_type] = json.loads(model)
 
         train_data = sub_ctx.reader(train_data).read_dataframe().data
-        columns = train_data.schema.columns
+        columns = train_data.schema.columns.to_list()
         if use_anonymous:
-            anonymous_columns = train_data.schema.anonymous_columns
+            anonymous_columns = train_data.schema.anonymous_columns.to_list()
             if select_col is not None:
                 select_col = [columns[anonymous_columns.index(col)] for col in select_col]
             if manual_param.filter_out_col is not None:

@@ -178,7 +178,7 @@ class StandardBinning(Module):
     def fit(self, ctx: Context, train_data, validate_data=None, skip_none=False):
         # only bin given `col_bin` cols
         if self.bin_col is None:
-            self.bin_col = train_data.schema.columns
+            self.bin_col = train_data.schema.columns.to_list()
 
         if self.method == "quantile":
             q = np.arange(0, 1, 1 / self.n_bins)
