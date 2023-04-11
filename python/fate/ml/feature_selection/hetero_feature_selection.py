@@ -22,14 +22,14 @@ import numpy as np
 import pandas as pd
 
 from fate.interface import Context
-from ..abc.module import Module
+from ..abc.module import Module, HeteroModule
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_METRIC = {"iv": ["iv"], "statistic": ["mean"]}
 
 
-class HeteroSelectionModuleGuest(Module):
+class HeteroSelectionModuleGuest(HeteroModule):
     def __init__(self, method=None, select_col=None, isometric_model_dict=None,
                  iv_param=None, statistic_param=None, manual_param=None,
                  keep_one=True):
@@ -132,7 +132,7 @@ class HeteroSelectionModuleGuest(Module):
         return selection_obj
 
 
-class HeteroSelectionModuleHost(Module):
+class HeteroSelectionModuleHost(HeteroModule):
     def __init__(self, method=None, select_col=None, isometric_model_dict=None,
                  iv_param=None, statistic_param=None, manual_param=None,
                  keep_one=True):

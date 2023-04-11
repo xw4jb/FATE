@@ -20,12 +20,12 @@ import pandas as pd
 import torch
 
 from fate.interface import Context
-from ..abc.module import Module
+from ..abc.module import Module, HeteroModule
 
 logger = logging.getLogger(__name__)
 
 
-class HeteroBinningModuleGuest(Module):
+class HeteroBinningModuleGuest(HeteroModule):
     def __init__(self, method="quantile", n_bins=10, split_pt_dict=None, bin_col=None, transform_method=None,
                  category_col=None, local_only=False, error_rate=1e-3, adjustment_factor=0.5):
         self.method = method
@@ -89,7 +89,7 @@ class HeteroBinningModuleGuest(Module):
         return bin_obj
 
 
-class HeteroBinningModuleHost(Module):
+class HeteroBinningModuleHost(HeteroModule):
     def __init__(self, method="quantile", n_bins=10, bin_col=None, split_pt_dict=None, transform_method=None,
                  category_col=None, local_only=False, error_rate=1e-3, adjustment_factor=0.5):
         self.method = method
