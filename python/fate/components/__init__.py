@@ -102,10 +102,10 @@ class Artifact:
     """
 
     def __init__(
-        self,
-        name: Optional[str] = None,
-        uri: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
     ) -> None:
         """Initializes the Artifact with the given name, URI and metadata."""
         self.uri = uri or ""
@@ -144,10 +144,10 @@ class DatasetArtifact(Artifact):
     """
 
     def __init__(
-        self,
-        name: Optional[str] = None,
-        uri: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
     ) -> None:
         super().__init__(uri=uri, name=name, metadata=metadata)
 
@@ -168,10 +168,10 @@ class ModelArtifact(Artifact):
     """
 
     def __init__(
-        self,
-        name: Optional[str] = None,
-        uri: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
     ) -> None:
         super().__init__(uri=uri, name=name, metadata=metadata)
 
@@ -184,10 +184,10 @@ class MetricArtifact(Artifact):
     type = "metric"
 
     def __init__(
-        self,
-        name: Optional[str] = None,
-        uri: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
     ) -> None:
         super().__init__(uri=uri, name=name, metadata=metadata)
 
@@ -196,10 +196,10 @@ class LossMetrics(MetricArtifact):
     type = "loss"
 
     def __init__(
-        self,
-        name: Optional[str] = None,
-        uri: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
     ) -> None:
         super().__init__(uri=uri, name=name, metadata=metadata)
 
@@ -216,9 +216,33 @@ class ClassificationMetrics(MetricArtifact):
     type = "classification_metrics"
 
     def __init__(
-        self,
-        name: Optional[str] = None,
-        uri: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
     ):
+        super().__init__(uri=uri, name=name, metadata=metadata)
+
+
+class DataSplitMetrics(MetricArtifact):
+    type = "data_split_metrics"
+
+    def __init__(
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
+    ) -> None:
+        super().__init__(uri=uri, name=name, metadata=metadata)
+
+
+class SampleMetrics(MetricArtifact):
+    type = "sample_metrics"
+
+    def __init__(
+            self,
+            name: Optional[str] = None,
+            uri: Optional[str] = None,
+            metadata: Optional[Dict] = None,
+    ) -> None:
         super().__init__(uri=uri, name=name, metadata=metadata)

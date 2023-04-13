@@ -14,8 +14,10 @@
 #  limitations under the License.
 from .evaluation import evaluation
 from .feature_scale import feature_scale
+from .hetero_data_split import hetero_data_split
 from .hetero_lr import hetero_lr
+from .hetero_sample import hetero_sample
 from .intersection import intersection
 from .reader import reader
 
-BUILDIN_COMPONENTS = [hetero_lr, reader, feature_scale, intersection, evaluation]
+BUILDIN_COMPONENTS = [hetero_lr, reader, feature_scale, intersection, evaluation, hetero_data_split, hetero_sample]
