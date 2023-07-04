@@ -38,8 +38,10 @@ feature_scale_0 = FeatureScale("feature_scale_0",
                                train_data=intersection_0.outputs["output_data"])
 
 feature_scale_1 = FeatureScale("feature_scale_1",
-                               test_data=intersection_1.outputs["output_data"],
-                               input_model=feature_scale_0.outputs["output_model"])
+                               method="min_max",
+                               feature_range=[0, 2],
+                               scale_col=["x0", "x3"],
+                               train_data=intersection_1.outputs["output_data"])
 
 pipeline.add_task(intersection_0)
 pipeline.add_task(intersection_1)
@@ -52,9 +54,9 @@ print(pipeline.get_dag())
 pipeline.fit()
 
 print(pipeline.get_task_info("feature_scale_0").get_output_model())
-# print(pipeline.get_task_info("feature_scale_1").get_output_model())
+print(pipeline.get_task_info("feature_scale_1").get_output_model())
 
-pipeline.deploy([intersection_0, feature_scale_0])
+pipeline.deploy([intersection_0, feature_scale_0, feature_scale_1])
 
 predict_pipeline = FateFlowPipeline()
 
@@ -66,7 +68,4 @@ intersection_0.hosts[0].component_setting(input_data=DataWarehouseChannel(name="
 
 predict_pipeline.add_task(deployed_pipeline)
 predict_pipeline.compile()
-# print("\n\n\n")
-# print(predict_pipeline.compile().get_dag())
 predict_pipeline.predict()
-print(predict_pipeline.get_task_info("feature_scale_0").get_output_model())
